@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Stepper.h>
+#include <AccelStepper.h>
 
 /**
 * Arduino windowblind puller-upper-downer with a stepper motor. Opens a blind at sunrise, closes at sunset.
@@ -18,24 +18,24 @@
 
 // For the Nano
 // Trouble Uploading? Close the serial monitor, use (Old bootloader), check your cable is a data cable, Arduino as ISP programmer
-#define SER
-#define PHOTO_ANA_PIN A7  // ??
-#define PH_PIN A7         //
-#define LIFT_PIN1 2          // A pin that will be set to high. Lines up with the VCC pin on the 8833
-#define LIFT_PIN2 14         // A pin that will be set to high. Connect with a resistor to pull UP_PIN up.
-#define LIFT_PIN3 15         // A pin that will be set to high. Connect with a resistor to pull DOWN_PIN up.
-#define SINK_PIN 7          // A pin that will be set to low. Lines up with the MD pin on the 8833
-#define UP_PIN 8
-#define DOWN_PIN 9
-#define A1_PIN 3
-#define A2_PIN 4
-#define B1_PIN 5
-#define B2_PIN 6
-#define LED_PIN 13
-#define ANALOG_BITS 10
+// #define SER
+// #define PHOTO_ANA_PIN A7  // ??
+// #define PH_PIN A7         //
+// #define LIFT_PIN1 2          // A pin that will be set to high. Lines up with the VCC pin on the 8833
+// #define LIFT_PIN2 14         // A pin that will be set to high. Connect with a resistor to pull UP_PIN up.
+// #define LIFT_PIN3 15         // A pin that will be set to high. Connect with a resistor to pull DOWN_PIN up.
+// #define SINK_PIN 7          // A pin that will be set to low. Lines up with the MD pin on the 8833
+// #define UP_PIN 8
+// #define DOWN_PIN 9
+// #define A1_PIN 3
+// #define A2_PIN 4
+// #define B1_PIN 5
+// #define B2_PIN 6
+// #define LED_PIN 13
+// #define ANALOG_BITS 10
 
 // For the digispark
-// #define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the trinket
+// #define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the digispark
 // #define PH_PIN 2    //
 // #define A1_PIN 0
 // #define A2_PIN 1
@@ -44,13 +44,13 @@
 // #define ANALOG_BITS 10
 
 // For the Trinket. USBtinyISP programmer.
-// #define PH_PIN 2
-// #define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the trinket
-// #define A1_PIN 1
-// #define A2_PIN 0
-// #define B1_PIN 3
-// #define B2_PIN 4
-// #define ANALOG_BITS 10
+#define PH_PIN 2
+#define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the trinket
+#define A1_PIN 1
+#define A2_PIN 0
+#define B1_PIN 3
+#define B2_PIN 4
+#define ANALOG_BITS 10
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
 
@@ -65,12 +65,12 @@
 
 // Customize these params according to your motor.
 #define STEPS 1024  // for the 28BYJ-48
-#define RPM 1
+#define RPM 100
 
 // Customize this param according to your blind.
 #define TURNS 1// -8.5  // Turns at sunset
 
-Stepper stepper = Stepper(STEPS, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
+AccelStepper stepper = AccelStepper(AccelStepper::FULL4WIRE, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
 bool isOpen = false;  // Make sure your blind is in this position when booting.
 float avgLight = isOpen ? 1.0 : 0.0;
 
@@ -117,32 +117,20 @@ void setup() {
   digitalWrite(LED_PIN, 1);
 #endif
 
-  digitalWrite(A1_PIN, 0);
-  digitalWrite(A2_PIN, 0);
-  digitalWrite(B1_PIN, 0);
-  digitalWrite(B2_PIN, 0);
-
   stepper.setSpeed(RPM);
-  delay(2000);
+  stepper.disableOutputs();
 }
 
-void turn(float rotations) {
+void move(float position) {
   
 #ifdef LED_PIN
   digitalWrite(LED_PIN, 1);
 #endif
 
-  // digitalWrite(B1_PIN, 1);
-  // digitalWrite(B2_PIN, 0);
-  // delay(10000);
-  // digitalWrite(A1_PIN, 0);
-
-  stepper.step(-rotations * STEPS);
+  stepper.enableOutputs();
+  stepper.runToNewPosition(position);
   // Turn off the current because the stepper doesn't need to hold in place.
-  digitalWrite(A1_PIN, 0);
-  digitalWrite(A2_PIN, 0);
-  digitalWrite(B1_PIN, 0);
-  digitalWrite(B2_PIN, 0);
+  stepper.disableOutputs();
 #ifdef LED_PIN
   digitalWrite(LED_PIN, 0);
 #endif
@@ -160,23 +148,27 @@ void loop() {
 #ifdef SER 
     Serial.println("Sunset");
 #endif
-    turn(TURNS);                                   // Assuming positive rotations to close
+    move(TURNS * STEPS);
     isOpen = false;
   } else if (!isOpen && s < DAYLIGHT - DAYLIGHT_MARGIN) {  // Sunrise happens
 #ifdef SER
     Serial.println("Sunrise");
 #endif
-    turn(-TURNS);                                          // Assuming negative rotation to open
+    move(0);
     isOpen = true;
   } 
 
 #ifdef UP_PIN
   while (digitalRead(UP_PIN) == 0) {
-    turn(.1);
+    stepper.enableOutputs();
+    stepper.move(1);
+    stepper.disableOutputs();
   }
 
   while (digitalRead(DOWN_PIN) == 0) {
-    turn(-.1);
+    stepper.enableOutputs();
+    stepper.move(-1);
+    stepper.disableOutputs();
   }
 #endif
 
