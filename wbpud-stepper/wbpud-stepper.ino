@@ -2,6 +2,7 @@
 #include <Stepper.h>
 #include <EEPROM.h>
 #include <FastLED.h>
+#include <EEncoder.h>
 
 /**
 * Arduino windowblind puller-upper-downer with a stepper motor. Opens a blind at sunrise, closes at sunset.
@@ -19,7 +20,6 @@
 
 // For the Nano
 // Trouble Uploading? Close the serial monitor, use (Old bootloader), check your cable is a data cable, Arduino as ISP programmer
-// #define SER
 // #define BAUD 9600
 // #define PHOTO_ANA_PIN A7  // ??
 // #define PH_PIN A7         //
@@ -33,7 +33,7 @@
 // #define A2_PIN 4
 // #define B1_PIN 5
 // #define B2_PIN 6
-// #define LED_PIN 13
+// #define LED1_PIN 13
 // #define ANALOG_BITS 10
 
 // For the digispark. USBasp programmer
@@ -59,12 +59,11 @@
 // #define PHOTO_ANA_PIN 3 //  Analog pin 3 = PB3 on the trinket
 // #define EN_PIN 0
 // #define STEP_PIN 1
-// #define LED_PIN 1
+// #define LED1_PIN 1
 // #define DIR_PIN 2
 // #define ANALOG_BITS 10
 
 // For the Pico. Use JLink programmer.
-// #define SER 
 // #define BAUD 115200
 // // With DRV8825
 // #define PH_PIN 27
@@ -79,7 +78,7 @@
 // #define M1_PIN 7
 // #define M2_PIN 6
 // #define MICROSTEPS_PER_STEP 4 // 2^X steps per step e.g. 4 = 16 microsteps per step
-// #define LED_PIN 25
+// #define LED1_PIN 25
 // #define EEPROM_ADDRESS 0
 // #define ANALOG_BITS 10
 // With DRV8835 
@@ -93,48 +92,67 @@
 // #define LIFT_PIN2 22
 
 
-
 // For the Pico Tiny RP2040
-// #define SER 
-// #define PH_PIN A0
-// #define PHOTO_ANA_PIN A0 //  Analog pin 1 = PB2 on the
-// #define UP_PIN 0
-// #define DOWN_PIN 1
-// #define A1_PIN 2
-// #define A2_PIN 3
-// #define B1_PIN 4
-// #define B2_PIN 5
-// #define LIFT_PIN1 6
+// Board  -> 'Waveshare RP2040 Zero'
+// #define BAUD 115200
+// #define PH_PIN A1
+// #define PHOTO_ANA_PIN A1
+// #define LED1_PIN 20
+// #define LED2_PIN 19
+// #define LED_ON 0
+// #define LED_OFF 1
 // #define ANALOG_BITS 10
+// #define EEPROM_ADDRESS 0
+// With L293D
+// #define EN_PIN 6
+// #define H1_PIN 4
+// #define H2_PIN 5
+// With A988
+// #define EN_PIN 0 
+// #define M1_PIN 1
+// #define M2_PIN 2
+// #define M3_PIN 3
+// #define LIFT_PIN2 4
+// #define LIFT_PIN3 5
+// #define STEP_PIN 6
+// #define DIR_PIN 7
+
 
 // For the RP2040-zero
 // Board 'Raspberry Pi Pico/RP2040/RP2035' -> 'Waveshare RP2040 Zero'
 // To enter bootloading mode, hold reset, hold boot, release reset, release boot
-// #define SER 
 #define BAUD 115200
-#define PH_PIN 27
-#define PHOTO_ANA_PIN 27 //  Analog pin 2 = PB28 on the pico
+#define PH_PIN 27         //A2 is pin 28 on the Tiny2040
+#define PHOTO_ANA_PIN 27       // On some (Pi RP2040?) this should be the PB pin i.e. PH_PIN, otherwise it's the A pin number
+#define NEOPIXEL_PIN 16
 // #define UP_PIN 9
 // #define DOWN_PIN 8
-#define NEOPIXEL_PIN 16
-#define EEPROM_ADDRESS 0
-#define ANALOG_BITS 10
-#define LIFT_PIN1 13
-// // With DRV8825 or A988
+// #define EEPROM_ADDRESS 0
+#define ANALOG_BITS 12    // Tiny2040 is 12, RP2040 is 10
+// // With the L293D and an encoder
+// #define EN_PIN 6
+// #define H1_PIN 4
+// #define H2_PIN 5
+// #define SINK_PIN1 14
+// #define ENC1_PIN 15
+// #define ENC2_PIN 26
+// #define LIFT_PIN1 27
+// // With the A988
+#define SIXTEENTH_STEP_IS_111 1
+#define LIFT_PIN1 8
 #define EN_PIN 0 
 #define M1_PIN 1
-#define M2_PIN 4
+#define M2_PIN 2
 #define M3_PIN 3
-#define LIFT_PIN2 8
-// #define LIFT_PIN3 5
+#define LIFT_PIN2 4     
+#define LIFT_PIN3 5
 #define STEP_PIN 6
 #define DIR_PIN 7
-#define MICROSTEP_MODE 3 // 2^X steps per step e.g. 3 = 8 microsteps per step
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
 
 // You may need to reduce AVG_HEAD if the motor starts at the wrong time of day
-#define AVG_HEAD 0.3  // Weight of the latest sample
+#define AVG_HEAD 0.2  // Weight of the latest sample
 #define AVG_TAIL (1.0 - AVG_HEAD)
 
 // Increase DAYLIGHT for day to start earlier / end later. Light increases conductivity in the photocell, which is connected to ground, so more light lowers the 
@@ -149,27 +167,35 @@
 
 // Increase DAYLIGHT_MARGIN if the blind reverses
 // immediately after it opens / closes.
-#define DAYLIGHT_MARGIN 0.01
+#define DAYLIGHT_MARGIN 0.04
 
 // Customize these params according to your motor.
 //#define STEPS_PER_ROTATION 64 * 2 * 64  // for the 28BYJ-48
-#define STEPS_PER_ROTATION 200UL * 4 // for the JK28HS32-0674
-#define RPM 20.
-#define BTN_FACTOR 2.  // RPM is multiplied by this wnen button pressed
+// #define STEPS_PER_ROTATION 200UL// * 4 // for the JK28HS32-0674
+#define STEPS_PER_ROTATION 200UL // for the 42STH34-0354A
+#define MICROSTEP_MODE 4 // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
+#define RPM 40
+// #define BTN_FACTOR 2.  // RPM is multiplied by this wnen button pressed
+// #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
 
 // Customize this param according to your blind.
-#define TURNS 1.0//24.5  // Turns at sunset
+#define TURNS 10//24.5  // Turns at sunset
+
+#define SLOW_INTERVAL 1000 // milliseconds between output, light sense ...
 
 bool isOpen = true;  // Make sure your blind is in this position when booting.
 float avgLight = isOpen ? 0.0 : 0.8; // isOpen means more light, low value
 float sunsetLight = INITIAL_SUNSET_LIGHT;
+long lastReadTime = 0;  // Count the number of reads since last output. Don't want to output every time.
+
 
 #ifdef A1_PIN
   Stepper stepper = Stepper(STEPS_PER_ROTATION, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
 #endif
 
-#ifdef SER
-  int readsSinceOut = 0;  // Count the number of reads since last output. Don't want to output every time.
+#ifdef ENC1_PIN
+  EEncoder encoder(ENC1_PIN, ENC2_PIN);
+  long position = 0;
 #endif
 
 #ifdef NEOPIXEL_PIN
@@ -178,10 +204,13 @@ float sunsetLight = INITIAL_SUNSET_LIGHT;
 
 void setup() {
   
-  #ifdef LED_PIN
-    pinMode(LED_PIN, OUTPUT);
-    // digitalWrite(LED_PIN, 1);
-    analogWrite(LED_PIN, 255);
+  #ifdef LED1_PIN
+    pinMode(LED1_PIN, OUTPUT);
+    digitalWrite(LED1_PIN, LED_ON); // blue to indicate booting or operating
+  #endif
+  #ifdef LED2_PIN
+    pinMode(LED2_PIN, OUTPUT);
+    digitalWrite(LED2_PIN, LED_ON);   // LED2 to indicate power
   #endif
 
   #ifdef NEOPIXEL_PIN
@@ -190,30 +219,36 @@ void setup() {
     FastLED.show();
   #endif
 
-  #ifdef SER
-    Serial.begin(BAUD);
-    while (!Serial) {};
+
+  // Serial.begin(BAUD);
+  delay(1000);
+  if (Serial) {
     Serial.println("Starting with iSL RPM STEPS_PER_ROTATION TURNS ANA_PIN");
     Serial.println(sunsetLight, 4);
-    Serial.println(RPM);
-    Serial.println(STEPS_PER_ROTATION);
     Serial.println(TURNS);
     Serial.println(PHOTO_ANA_PIN);
-  #endif
+  }
+    led = CRGB::White;
+    FastLED.show();
 
   #ifdef EEPROM_ADDRESS
     EEPROM.begin(512);
     float eeSunsetLight = 0.0;
     EEPROM.get(EEPROM_ADDRESS, eeSunsetLight);
-    Serial.print("Loading light from EEPROM: ");
-    Serial.println(eeSunsetLight);
+    if (Serial) {
+      Serial.print("Loading light from EEPROM: ");
+      Serial.println(eeSunsetLight);
+    }
     if (eeSunsetLight > 0.1 && eeSunsetLight < 0.9) {
       sunsetLight = eeSunsetLight;
     } else {
-      Serial.println("Loaded value out of range.");
+      if (Serial) {
+        Serial.println("Loaded value out of range.");
+      }
     }
   #endif
 
+  
   // These may or may not be strictly necessary
   #ifdef A1_PIN
     pinMode(A1_PIN, OUTPUT);
@@ -226,8 +261,13 @@ void setup() {
     pinMode(DIR_PIN, OUTPUT);
     pinMode(EN_PIN, OUTPUT);
   #endif
+  #ifdef H1_PIN
+    pinMode(H1_PIN, OUTPUT);
+    pinMode(H2_PIN, OUTPUT);
+    pinMode(EN_PIN, OUTPUT);
+  #endif
 
-    pinMode(PH_PIN, INPUT);
+    pinMode(PH_PIN, INPUT_PULLUP);
     analogReadResolution(ANALOG_BITS);;
 
   #ifdef UP_PIN
@@ -257,9 +297,15 @@ void setup() {
     digitalWrite(A2_PIN, 0);
     digitalWrite(B1_PIN, 0);
     digitalWrite(B2_PIN, 0);
-  #else
-    digitalWrite(EN_PIN, 1);    // High voltage disables the STSPIN220
+  #endif
+  #ifdef STEP_PIN
+    digitalWrite(EN_PIN, 1);    // High voltage disables the STSPIN220, the A4988 and the DRV2588
     digitalWrite(STEP_PIN, 0);
+  #endif
+  #ifdef H1_PIN
+    digitalWrite(H1_PIN, 0);
+    digitalWrite(H2_PIN, 0);
+    digitalWrite(EN_PIN, 0);
   #endif
 
   #ifdef M1_PIN
@@ -271,23 +317,42 @@ void setup() {
       digitalWrite(M2_PIN, 0);
       digitalWrite(M3_PIN, 0);
     #else
+      // microstep mode 0 (fullstep) gives 000, 1 (halfstep) gives 100, 2 gives 010, 3 gives 110, 4 gives 001, etc., except for the overrides below.   
       bool m1mode = (MICROSTEP_MODE) % 2;
       bool m2mode = ((MICROSTEP_MODE) >> 1) % 2;
       bool m3mode = ((MICROSTEP_MODE) >> 2) % 2;
-      if (MICROSTEP_MODE == 4) { // Check the docs for the driver. The A988 is like this:
+      #ifdef SIXTEENTH_STEP_IS_111 // Check the docs for the driver. The A988 is like this:
+      if (MICROSTEP_MODE == 4) { 
         m1mode = true;
         m2mode = true;
       }
-      #ifdef SER
+      #endif
+      #ifdef THIRTYTWOOTH_STEP_IS_III
+        if (MICROSTEP_MODE == 5) { // DRV8825 is like this when 1 2 and 3 are jumped because the PB2 is not working
+          m2mode = true;
+          m3mode = true;
+        }
+      #endif
+      if (Serial) {
         Serial.print("M1 M2 M3: ");
         Serial.print(m1mode);
         Serial.print(m2mode);
         Serial.println(m3mode);
-      #endif
+      }
       digitalWrite(M1_PIN, m1mode);
       digitalWrite(M2_PIN, m2mode);
       digitalWrite(M3_PIN, m3mode);
     #endif
+  #endif
+
+  #ifdef ENC1_PIN
+    pinMode(ENC1_PIN, INPUT_PULLUP);
+    pinMode(ENC2_PIN, INPUT_PULLUP);
+    encoder.setEncoderHandler(rotationCallback);
+  #endif
+
+  #ifdef LED1_PIN
+    digitalWrite(LED1_PIN, LED_OFF);
   #endif
   #ifdef NEOPIXEL_PIN
     led = CRGB::Black;
@@ -298,57 +363,65 @@ void setup() {
 
 void loop() {
 
-
-  float s = sample();
-
-  #ifdef SER
-    if (readsSinceOut++ > 100) {
-      Serial.println(s, 4);
-      readsSinceOut = 0;
-    }
+  #ifdef ENC1_PIN
+    encoder.update();
   #endif
 
-  if (isOpen && s > sunsetLight + DAYLIGHT_MARGIN) {  // Sunset happens
-    #ifdef SER
+  if (lastReadTime < millis() - SLOW_INTERVAL) {
+    float s = sample();
+    if (Serial) {
       Serial.println(s, 4);
-      Serial.println("Sunset");
-    #endif
-    turn(TURNS);                                   // Assuming positive rotations to close
-    isOpen = false;
-    delay(2000);
-  } else if (!isOpen && s < sunsetLight - DAYLIGHT_MARGIN) {  // Sunrise happens
-    #ifdef SER
-      Serial.println(s, 4);
-      Serial.println("Sunrise");
-    #endif
-    turn(-TURNS);                                          // Assuming negative rotation to open
-    isOpen = true;
-  } 
+      #ifdef ENC1_PIN
+        Serial.print("ENC ");
+        Serial.println(position);         
+      #endif
+    }
+    lastReadTime = millis();
+  
+
+    if (isOpen && s > sunsetLight + DAYLIGHT_MARGIN) {  // Sunset happens
+      if (Serial) {
+        Serial.println(s, 4);
+        Serial.println("Sunset");
+      }
+      turn(TURNS);                                   // Assuming positive rotations to close
+      isOpen = false;
+    } else if (!isOpen && s < sunsetLight - DAYLIGHT_MARGIN) {  // Sunrise happens
+      if (Serial) {
+        Serial.println(s, 4);
+        Serial.println("Sunrise");
+      }
+      turn(-TURNS);                                          // Assuming negative rotation to open
+      isOpen = true;
+    } 
+  }
 
   #ifdef UP_PIN
     if (!digitalRead(UP_PIN) && !digitalRead(DOWN_PIN)) {
-      Serial.print("Setting to ");
-      Serial.println(sunsetLight, 4);
-
+      if (Serial) {
+        Serial.print("Setting to ");
+        Serial.println(sunsetLight, 4);
+      }
       sunsetLight = s;
 
       #ifdef EEPROM_ADDRESS
         float result = EEPROM.put(EEPROM_ADDRESS, sunsetLight);
-        Serial.print("Writing light to EEPROM: ");
-        Serial.println(sunsetLight);
-        Serial.print("Result: ");
-        Serial.println(result);
-
+        if (Serial) {
+          Serial.print("Writing light to EEPROM: ");
+          Serial.println(sunsetLight);
+          Serial.print("Result: ");
+          Serial.println(result);
+        }
         EEPROM.commit();
       #endif
-      #if LED_PIN
-        digitalWrite(LED_PIN, 1);
+      #if LED1_PIN
+        digitalWrite(LED1_PIN, 1);
         delay(500);
-        digitalWrite(LED_PIN, 0);
+        digitalWrite(LED1_PIN, 0);
         delay(500);
-        digitalWrite(LED_PIN, 1);
+        digitalWrite(LED1_PIN, 1);
         delay(500);
-        digitalWrite(LED_PIN, 0);
+        digitalWrite(LED1_PIN, 0);
       #endif
 
     } else {
@@ -361,7 +434,6 @@ void loop() {
     }
   #endif
 
-  delay(10);
 }
 
 
@@ -372,15 +444,22 @@ float sample() {
   return avgLight;
 }
 
+#ifdef ENC1_PIN
+  void rotationCallback(EEncoder &enc) {
+
+    position += enc.getIncrement();                                            
+  } 
+#endif
 
 // A blocking implementation
 void turn(double rotations, double factor) {
-  #ifdef SER
+  if (Serial) {
     Serial.print("turning ");
     Serial.println(rotations);
-  #endif
-  #ifdef LED_PIN
-    digitalWrite(LED_PIN, 1);
+    delay(10);
+  }
+  #ifdef LED1_PIN
+    digitalWrite(LED1_PIN, LED_ON);
   #endif  
   #ifdef NEOPIXEL_PIN
     led = rotations > 0 ? CRGB::Green : CRGB::Blue;
@@ -397,18 +476,19 @@ void turn(double rotations, double factor) {
     digitalWrite(A2_PIN, 0);
     digitalWrite(B1_PIN, 0);
     digitalWrite(B2_PIN, 0);
-  #else
-    digitalWrite(EN_PIN, 0);
+  #endif
+  #ifdef STEP_PIN
+    digitalWrite(EN_PIN, 0);    // Low to enable
     digitalWrite(DIR_PIN, rotations > 0);
     digitalWrite(STEP_PIN, 0);
     uint32_t microsteps = abs(rotations * STEPS_PER_ROTATION * microstepsPerStep);
     double delaymicros = 60000000./(RPM * STEPS_PER_ROTATION * microstepsPerStep*factor);
-    #ifdef SER
+    if (Serial) {
       Serial.print("Microsteps:");
       Serial.println(microsteps);
       Serial.print("Delay");
       Serial.println(delaymicros);
-    #endif
+    }
     for (uint32_t steps = 0; steps < microsteps; steps++) {
       digitalWrite(STEP_PIN, 1);
       delayMicroseconds(delaymicros/2);    // DRV8825 has 1.9 uS minimum pulse duration
@@ -419,9 +499,37 @@ void turn(double rotations, double factor) {
     // Turn off current
     digitalWrite(EN_PIN, 1);    // High voltage disables the STSPIN220
   #endif
+  #ifdef ENC1_PIN
+    encoder.update();
+    long goal = position + (rotations * ENC_REDUCTION);
+    if (Serial) {
+      Serial.println("Position: " + position);
+      Serial.println("Goal: " + goal);
+    }
+    digitalWrite(H1_PIN, rotations >= 0);
+    digitalWrite(H2_PIN, rotations < 0);
+    
+    digitalWrite(EN_PIN, 1);
+    if (Serial) {
+      Serial.println(position);
+      delay(10);
+    }
+    while (rotations < 0 ? position > goal : position < goal ) {
+      encoder.update();
+      // Serial.println(position);
+    }    
+    digitalWrite(H1_PIN, 0);
+    digitalWrite(H2_PIN, 0);
+    digitalWrite(EN_PIN, 0);
+    if (Serial) {
+      Serial.println(position);
+      delay(10);
+    }
+7    delay(3000);
+  #endif
 
-  #ifdef LED_PIN
-    digitalWrite(LED_PIN, 0);
+  #ifdef LED1_PIN
+    digitalWrite(LED1_PIN, LED_OFF);
   #endif
   
   #ifdef NEOPIXEL_PIN
