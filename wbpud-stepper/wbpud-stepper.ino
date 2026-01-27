@@ -179,7 +179,7 @@
 // #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
 
 // Customize this param according to your blind. (4cm per turn)
-#define TURNS 4//24//24.5  // Turns at sunset
+#define TURNS 8//24//24.5  // Turns at sunset
 
 #define SLOW_INTERVAL 1000 // milliseconds between output, light sense ...
 
@@ -310,9 +310,10 @@ void setup() {
   #endif
   #ifdef STEP_PIN
     stepper.setEnablePin(EN_PIN);
-    stepper.setMinPulseWidth(2.0); // The A4988 has minimum pulse width of 1us
-    stepper.setMaxSpeed(STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP/ 60.0);
-    stepper.setAcceleration(400 * MICROSTEPS_PER_STEP);
+    stepper.setMinPulseWidth(20); // The A4988 has minimum pulse width of 1us
+    Serial.println(STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP/ 60.f);
+    stepper.setMaxSpeed(STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP/ 60.f);
+    stepper.setAcceleration(400.f * MICROSTEPS_PER_STEP);
     stepper.setPinsInverted(false, false, true);  // A4988 EN is active low
     stepper.disableOutputs();
   #endif
