@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <Stepper.h>
+#include <AccelStepper.h>
 #include <EEPROM.h>
 #include <FastLED.h>
 #include <EEncoder.h>
@@ -173,15 +173,17 @@
 //#define STEPS_PER_ROTATION 64 * 2 * 64  // for the 28BYJ-48
 // #define STEPS_PER_ROTATION 200UL// * 4 // for the JK28HS32-0674
 #define STEPS_PER_ROTATION 200UL // for the 42STH34-0354A
-#define MICROSTEP_MODE 4 // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
-#define RPM 15
+#define MICROSTEP_MODE 0 // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
+#define RPM 60
 #define BTN_FACTOR 1.2  // RPM is multiplied by this wnen button pressed
 // #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
 
 // Customize this param according to your blind. (4cm per turn)
-#define TURNS 24//24.5  // Turns at sunset
+#define TURNS 4//24//24.5  // Turns at sunset
 
 #define SLOW_INTERVAL 1000 // milliseconds between output, light sense ...
+
+#define MICROSTEPS_PER_STEP (1 << MICROSTEP_MODE)
 
 bool isOpen = true;  // Make sure your blind is in this position when booting.
 float avgLight = isOpen ? 0.0 : 0.8; // isOpen means more light, low value
@@ -190,7 +192,13 @@ long lastReadTime = 0;  // Count the number of reads since last output. Don't wa
 
 
 #ifdef A1_PIN
-  Stepper stepper = Stepper(STEPS_PER_ROTATION, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
+   // For drivers like the A4988
+  AccelStepper stepper(AccelStepper::FULL4WIRE, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
+#endif
+
+#ifdef STEP_PIN
+  // For drivers like the A4988, DRV8825, STSPIN220
+  AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 #endif
 
 #ifdef ENC1_PIN
@@ -301,8 +309,12 @@ void setup() {
     digitalWrite(B2_PIN, 0);
   #endif
   #ifdef STEP_PIN
-    digitalWrite(EN_PIN, 1);    // High voltage disables the STSPIN220, the A4988 and the DRV2588
-    digitalWrite(STEP_PIN, 0);
+    stepper.setEnablePin(EN_PIN);
+    stepper.setMinPulseWidth(2.0); // The A4988 has minimum pulse width of 1us
+    stepper.setMaxSpeed(STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP/ 60.0);
+    stepper.setAcceleration(400 * MICROSTEPS_PER_STEP);
+    stepper.setPinsInverted(false, false, true);  // A4988 EN is active low
+    stepper.disableOutputs();
   #endif
   #ifdef H1_PIN
     digitalWrite(H1_PIN, 0);
@@ -363,10 +375,30 @@ void setup() {
 }
 
 float s;
+long stepstogo;
 void loop() {
 
   #ifdef ENC1_PIN
     encoder.update();
+  #endif
+
+  #if A1_PIN || STEP_PIN
+    
+    stepstogo = stepper.distanceToGo();    
+    #ifdef NEOPIXEL_PIN
+      if (stepstogo > 0) {
+        led = CRGB::Green;
+      } else if (stepstogo < 0) {
+        led = CRGB::Blue;
+      } else {
+        led = CRGB::Black;
+      }
+      FastLED.show();
+    #endif
+      if (stepstogo == 0) {
+        stepper.disableOutputs();
+      }
+    stepper.run();    
   #endif
 
   s = sample();
@@ -386,14 +418,16 @@ void loop() {
         Serial.println(s, 4);
         Serial.println("Sunset");
       }
-      turn(TURNS);                                   // Assuming positive rotations to close
+      stepper.enableOutputs();
+      stepper.moveTo(TURNS * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP);
       isOpen = false;
     } else if (!isOpen && s < sunsetLight - DAYLIGHT_MARGIN) {  // Sunrise happens
       if (Serial) {
         Serial.println(s, 4);
         Serial.println("Sunrise");
       }
-      turn(-TURNS);                                          // Assuming negative rotation to open
+      stepper.enableOutputs();
+      stepper.moveTo(0);
       isOpen = true;
     } 
   }
@@ -445,14 +479,13 @@ void loop() {
       #endif
     } else {
       if (digitalRead(UP_PIN) == 0) {
-        turn(.2, BTN_FACTOR);
+        //turn(.2, BTN_FACTOR);
       }
       if (digitalRead(DOWN_PIN) == 0) {
-        turn(-.2, BTN_FACTOR);
+        //turn(-.2, BTN_FACTOR);
       }
     }
   #endif
-
 }
 
 
@@ -465,97 +498,6 @@ float sample() {
 
 #ifdef ENC1_PIN
   void rotationCallback(EEncoder &enc) {
-
     position += enc.getIncrement();                                            
   } 
 #endif
-
-// A blocking implementation
-void turn(double rotations, double factor) {
-  if (Serial) {
-    Serial.print("turning ");
-    Serial.println(rotations);
-    delay(10);
-  }
-  #ifdef LED1_PIN
-    digitalWrite(LED1_PIN, LED_ON);
-  #endif  
-  #ifdef NEOPIXEL_PIN
-    led = rotations > 0 ? CRGB::Green : CRGB::Blue;
-    FastLED.show();
-  #endif
-
-  uint32_t microstepsPerStep = 1 << MICROSTEP_MODE;
-  #ifdef A1_PIN
-  
-    stepper.setSpeed(RPM*factor * STEPS_PER_ROTATION * microstepsPerStep);
-    stepper.step(-rotations * STEPS_PER_ROTATION);
-    // Turn off the current because the stepper doesn't need to hold in place.
-    digitalWrite(A1_PIN, 0);
-    digitalWrite(A2_PIN, 0);
-    digitalWrite(B1_PIN, 0);
-    digitalWrite(B2_PIN, 0);
-  #endif
-  #ifdef STEP_PIN
-    digitalWrite(EN_PIN, 0);    // Low to enable
-    digitalWrite(DIR_PIN, rotations > 0);
-    digitalWrite(STEP_PIN, 0);
-    uint32_t microsteps = abs(rotations * STEPS_PER_ROTATION * microstepsPerStep);
-    double delaymicros = 60000000./(RPM * STEPS_PER_ROTATION * microstepsPerStep*factor);
-    if (Serial) {
-      Serial.print("Microsteps:");
-      Serial.println(microsteps);
-      Serial.print("Delay");
-      Serial.println(delaymicros);
-    }
-    for (uint32_t steps = 0; steps < microsteps; steps++) {
-      digitalWrite(STEP_PIN, 1);
-      delayMicroseconds(delaymicros/2);    // DRV8825 has 1.9 uS minimum pulse duration
-      digitalWrite(STEP_PIN, 0);
-      delayMicroseconds(delaymicros/2);
-    }
-    // delay(3000);
-    // Turn off current
-    digitalWrite(EN_PIN, 1);    // High voltage disables the STSPIN220
-  #endif
-  #ifdef ENC1_PIN
-    encoder.update();
-    long goal = position + (rotations * ENC_REDUCTION);
-    if (Serial) {
-      Serial.println("Position: " + position);
-      Serial.println("Goal: " + goal);
-    }
-    digitalWrite(H1_PIN, rotations >= 0);
-    digitalWrite(H2_PIN, rotations < 0);
-    
-    digitalWrite(EN_PIN, 1);
-    if (Serial) {
-      Serial.println(position);
-      delay(10);
-    }
-    while (rotations < 0 ? position > goal : position < goal ) {
-      encoder.update();
-      // Serial.println(position);
-    }    
-    digitalWrite(H1_PIN, 0);
-    digitalWrite(H2_PIN, 0);
-    digitalWrite(EN_PIN, 0);
-    if (Serial) {
-      Serial.println(position);
-      delay(10);
-    }
-7    delay(3000);
-  #endif
-
-  #ifdef LED1_PIN
-    digitalWrite(LED1_PIN, LED_OFF);
-  #endif
-  
-  #ifdef NEOPIXEL_PIN
-    led = CRGB::Black;
-    FastLED.show();
-  #endif
-}
-void turn(double rotations) {
-  turn(rotations, 1.0);
-}
