@@ -94,40 +94,41 @@
 
 // For the Pico Tiny RP2040
 // Board  -> 'Waveshare RP2040 Zero'
-// #define BAUD 115200
-// #define PH_PIN A1
-// #define PHOTO_ANA_PIN A1
+
 // #define LED1_PIN 20
 // #define LED2_PIN 19
 // #define LED_ON 0
 // #define LED_OFF 1
 // #define ANALOG_BITS 10
 // #define EEPROM_ADDRESS 0
+// #define UP_PIN A1
+// #define DOWN_PIN A2 
 // With L293D
 // #define EN_PIN 6
 // #define H1_PIN 4
 // #define H2_PIN 5
 // With A988
-// #define EN_PIN 0 
-// #define M1_PIN 1
-// #define M2_PIN 2
-// #define M3_PIN 3
-// #define LIFT_PIN2 4
-// #define LIFT_PIN3 5
-// #define STEP_PIN 6
-// #define DIR_PIN 7
+// #define SIXTEENTH_STEP_IS_111 1
+// #define EN_PIN 7 
+// #define M1_PIN 6
+// #define M2_PIN 5
+// #define M3_PIN 4
+// #define LIFT_PIN2 3
+// #define LIFT_PIN3 2
+// #define STEP_PIN 1
+// #define DIR_PIN 0
 
 
 // For the RP2040-zero
 // Board 'Raspberry Pi Pico/RP2040/RP2035' -> 'Waveshare RP2040 Zero'
 // To enter bootloading mode, hold reset, hold boot, release reset, release boot
 #define BAUD 115200
-#define PH_PIN 27         //A2 is pin 28 on the Tiny2040
-#define PHOTO_ANA_PIN 27       // On some (Pi RP2040?) this should be the PB pin i.e. PH_PIN, otherwise it's the A pin number
+#define PH_PIN 29         //A2 is pin 28 on the Tiny2040
+#define PHOTO_ANA_PIN 29       // On some (Pi RP2040?) this should be the PB pin i.e. PH_PIN, otherwise it's the A pin number
 #define NEOPIXEL_PIN 16
-// #define UP_PIN 9
-// #define DOWN_PIN 8
-// #define EEPROM_ADDRESS 0
+#define UP_PIN 28
+#define DOWN_PIN 27
+#define EEPROM_ADDRESS 0
 #define ANALOG_BITS 12    // Tiny2040 is 12, RP2040 is 10
 // // With the L293D and an encoder
 // #define EN_PIN 6
@@ -139,15 +140,14 @@
 // #define LIFT_PIN1 27
 // // With the A988
 #define SIXTEENTH_STEP_IS_111 1
-#define LIFT_PIN1 8
-#define EN_PIN 0 
-#define M1_PIN 1
-#define M2_PIN 2
-#define M3_PIN 3
-#define LIFT_PIN2 4     
-#define LIFT_PIN3 5
-#define STEP_PIN 6
-#define DIR_PIN 7
+#define EN_PIN 7
+#define M1_PIN 6
+#define M2_PIN 5
+#define M3_PIN 4
+#define LIFT_PIN2 3     
+#define LIFT_PIN3 2
+#define STEP_PIN 1
+#define DIR_PIN 0
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
 
@@ -167,19 +167,19 @@
 
 // Increase DAYLIGHT_MARGIN if the blind reverses
 // immediately after it opens / closes.
-#define DAYLIGHT_MARGIN 0.04
+#define DAYLIGHT_MARGIN 0.02
 
 // Customize these params according to your motor.
 //#define STEPS_PER_ROTATION 64 * 2 * 64  // for the 28BYJ-48
 // #define STEPS_PER_ROTATION 200UL// * 4 // for the JK28HS32-0674
 #define STEPS_PER_ROTATION 200UL // for the 42STH34-0354A
 #define MICROSTEP_MODE 4 // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
-#define RPM 40
-// #define BTN_FACTOR 2.  // RPM is multiplied by this wnen button pressed
+#define RPM 15
+#define BTN_FACTOR 1.2  // RPM is multiplied by this wnen button pressed
 // #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
 
-// Customize this param according to your blind.
-#define TURNS 10//24.5  // Turns at sunset
+// Customize this param according to your blind. (4cm per turn)
+#define TURNS 24//24.5  // Turns at sunset
 
 #define SLOW_INTERVAL 1000 // milliseconds between output, light sense ...
 
@@ -228,8 +228,6 @@ void setup() {
     Serial.println(TURNS);
     Serial.println(PHOTO_ANA_PIN);
   }
-    led = CRGB::White;
-    FastLED.show();
 
   #ifdef EEPROM_ADDRESS
     EEPROM.begin(512);
@@ -271,8 +269,8 @@ void setup() {
     analogReadResolution(ANALOG_BITS);;
 
   #ifdef UP_PIN
-    pinMode(UP_PIN, INPUT);
-    pinMode(DOWN_PIN, INPUT);
+    pinMode(UP_PIN, INPUT_PULLUP);
+    pinMode(DOWN_PIN, INPUT_PULLUP);
   #endif
   #ifdef LIFT_PIN1
     pinMode(LIFT_PIN1, OUTPUT);
@@ -285,6 +283,10 @@ void setup() {
   #ifdef LIFT_PIN3
     pinMode(LIFT_PIN3, OUTPUT);
     digitalWrite(LIFT_PIN3, 1);
+  #endif
+  #ifdef LIFT_PIN4
+    pinMode(LIFT_PIN4, OUTPUT);
+    digitalWrite(LIFT_PIN4, 1);
   #endif
   #ifdef SINK_PIN1
     pinMode(SINK_PIN1, OUTPUT);
@@ -322,10 +324,10 @@ void setup() {
       bool m2mode = ((MICROSTEP_MODE) >> 1) % 2;
       bool m3mode = ((MICROSTEP_MODE) >> 2) % 2;
       #ifdef SIXTEENTH_STEP_IS_111 // Check the docs for the driver. The A988 is like this:
-      if (MICROSTEP_MODE == 4) { 
-        m1mode = true;
-        m2mode = true;
-      }
+        if (MICROSTEP_MODE == 4) { 
+          m1mode = true;
+          m2mode = true;
+        }
       #endif
       #ifdef THIRTYTWOOTH_STEP_IS_III
         if (MICROSTEP_MODE == 5) { // DRV8825 is like this when 1 2 and 3 are jumped because the PB2 is not working
@@ -360,15 +362,15 @@ void setup() {
   #endif
 }
 
-
+float s;
 void loop() {
 
   #ifdef ENC1_PIN
     encoder.update();
   #endif
 
+  s = sample();
   if (lastReadTime < millis() - SLOW_INTERVAL) {
-    float s = sample();
     if (Serial) {
       Serial.println(s, 4);
       #ifdef ENC1_PIN
@@ -398,14 +400,16 @@ void loop() {
 
   #ifdef UP_PIN
     if (!digitalRead(UP_PIN) && !digitalRead(DOWN_PIN)) {
-      if (Serial) {
-        Serial.print("Setting to ");
-        Serial.println(sunsetLight, 4);
-      }
-      sunsetLight = s;
-
       #ifdef EEPROM_ADDRESS
-        float result = EEPROM.put(EEPROM_ADDRESS, sunsetLight);
+        float target = s + isOpen ? DAYLIGHT_MARGIN/2.0 : 0-DAYLIGHT_MARGIN/2.0;
+        if (Serial) {
+          Serial.print("Setting to ");
+          Serial.println(target, 4);
+        }
+        sunsetLight = target;
+
+      
+        float result = EEPROM.put(EEPROM_ADDRESS, target);
         if (Serial) {
           Serial.print("Writing light to EEPROM: ");
           Serial.println(sunsetLight);
@@ -413,17 +417,32 @@ void loop() {
           Serial.println(result);
         }
         EEPROM.commit();
+        #if LED1_PIN
+          digitalWrite(LED1_PIN, 1);
+          delay(500);
+          digitalWrite(LED1_PIN, 0);
+          delay(500);
+          digitalWrite(LED1_PIN, 1);
+          delay(500);
+          digitalWrite(LED1_PIN, 0);
+        #else
+          #ifdef NEOPIXEL_PIN
+            led = CRGB::Yellow;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Black;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Yellow;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Black;
+            FastLED.show();
+          #else
+            delay(1500);
+          #endif
+        #endif
       #endif
-      #if LED1_PIN
-        digitalWrite(LED1_PIN, 1);
-        delay(500);
-        digitalWrite(LED1_PIN, 0);
-        delay(500);
-        digitalWrite(LED1_PIN, 1);
-        delay(500);
-        digitalWrite(LED1_PIN, 0);
-      #endif
-
     } else {
       if (digitalRead(UP_PIN) == 0) {
         turn(.2, BTN_FACTOR);
