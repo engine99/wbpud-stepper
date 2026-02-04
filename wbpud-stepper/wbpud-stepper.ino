@@ -186,7 +186,7 @@
 
 #define MICROSTEPS_PER_STEP (1 << MICROSTEP_MODE)
 
-bool isOpen;
+bool isOpen = true;                   // Make sure your blind is in this position when booting.;
 float avgLight = isOpen ? 0.0 : 0.8;  // isOpen means more light, low value
 float sunsetLight = INITIAL_SUNSET_LIGHT;
 long lastReadTime = 0;  // Count the number of reads since last output. Don't want to output every time.
@@ -215,27 +215,26 @@ CRGB led;
 
 void setup() {
 
-
   Serial.begin(BAUD);
   while (!Serial);
   int x = Serial.getWriteError();
   Serial.flush();
   Serial.println(x);
 
-#ifdef LED1_PIN
-  pinMode(LED1_PIN, OUTPUT);
-  digitalWrite(LED1_PIN, LED_ON);  // blue to indicate booting or operating
-#endif
-#ifdef LED2_PIN
-  pinMode(LED2_PIN, OUTPUT);
-  digitalWrite(LED2_PIN, LED_ON);  // LED2 to indicate power
-#endif
+  #ifdef LED1_PIN
+    pinMode(LED1_PIN, OUTPUT);
+    digitalWrite(LED1_PIN, LED_ON);  // blue to indicate booting or operating
+  #endif
+  #ifdef LED2_PIN
+    pinMode(LED2_PIN, OUTPUT);
+    digitalWrite(LED2_PIN, LED_ON);  // LED2 to indicate power
+  #endif
 
-#ifdef NEOPIXEL_PIN
-  FastLED.addLeds<WS2812, NEOPIXEL_PIN>(&led, 1);
-  led = CRGB::Red;
-  FastLED.show();
-#endif
+  #ifdef NEOPIXEL_PIN
+    FastLED.addLeds<WS2812, NEOPIXEL_PIN>(&led, 1);
+    led = CRGB::Red;
+    FastLED.show();
+  #endif
 
   stateMachine = StateMachine();
   moving = stateMachine.addState(&runMoving);
@@ -251,144 +250,142 @@ void setup() {
     Serial.println(MICROSTEPS_PER_STEP);
   }
 
-#ifdef EEPROM_ADDRESS
-  EEPROM.begin(512);
-  float eeSunsetLight = 0.0;
-  EEPROM.get(EEPROM_ADDRESS, eeSunsetLight);
-  if (Serial) {
-    Serial.print("Loading light from EEPROM: ");
-    Serial.println(eeSunsetLight);
-  }
-  if (eeSunsetLight > 0.1 && eeSunsetLight < 0.9) {
-    sunsetLight = eeSunsetLight;
-  } else {
+  #ifdef EEPROM_ADDRESS
+    EEPROM.begin(512);
+    float eeSunsetLight = 0.0;
+    EEPROM.get(EEPROM_ADDRESS, eeSunsetLight);
     if (Serial) {
-      Serial.println("Loaded value out of range.");
+      Serial.print("Loading light from EEPROM: ");
+      Serial.println(eeSunsetLight);
     }
-  }
-#endif
+    if (eeSunsetLight > 0.1 && eeSunsetLight < 0.9) {
+      sunsetLight = eeSunsetLight;
+    } else {
+      if (Serial) {
+        Serial.println("Loaded value out of range.");
+      }
+    }
+  #endif
 
 
-// These may or may not be strictly necessary
-#ifdef A1_PIN
-  pinMode(A1_PIN, OUTPUT);
-  pinMode(A2_PIN, OUTPUT);
-  pinMode(B1_PIN, OUTPUT);
-  pinMode(B2_PIN, OUTPUT);
-#endif
-#ifdef STEP_PIN
-  pinMode(STEP_PIN, OUTPUT);
-  pinMode(DIR_PIN, OUTPUT);
-  pinMode(EN_PIN, OUTPUT);
-#endif
-#ifdef H1_PIN
-  pinMode(H1_PIN, OUTPUT);
-  pinMode(H2_PIN, OUTPUT);
-  pinMode(EN_PIN, OUTPUT);
-#endif
+  // These may or may not be strictly necessary
+  #ifdef A1_PIN
+    pinMode(A1_PIN, OUTPUT);
+    pinMode(A2_PIN, OUTPUT);
+    pinMode(B1_PIN, OUTPUT);
+    pinMode(B2_PIN, OUTPUT);
+  #endif
+  #ifdef STEP_PIN
+    pinMode(STEP_PIN, OUTPUT);
+    pinMode(DIR_PIN, OUTPUT);
+    pinMode(EN_PIN, OUTPUT);
+  #endif
+  #ifdef H1_PIN
+    pinMode(H1_PIN, OUTPUT);
+    pinMode(H2_PIN, OUTPUT);
+    pinMode(EN_PIN, OUTPUT);
+  #endif
 
   pinMode(PH_PIN, INPUT_PULLUP);
   analogReadResolution(ANALOG_BITS);
-  ;
 
-#ifdef UP_PIN
-  pinMode(UP_PIN, INPUT_PULLUP);
-  pinMode(DOWN_PIN, INPUT_PULLUP);
-#endif
-#ifdef LIFT_PIN1
-  pinMode(LIFT_PIN1, OUTPUT);
-  digitalWrite(LIFT_PIN1, 1);
-#endif
-#ifdef LIFT_PIN2
-  pinMode(LIFT_PIN2, OUTPUT);
-  digitalWrite(LIFT_PIN2, 1);
-#endif
-#ifdef LIFT_PIN3
-  pinMode(LIFT_PIN3, OUTPUT);
-  digitalWrite(LIFT_PIN3, 1);
-#endif
-#ifdef LIFT_PIN4
-  pinMode(LIFT_PIN4, OUTPUT);
-  digitalWrite(LIFT_PIN4, 1);
-#endif
-#ifdef SINK_PIN1
-  pinMode(SINK_PIN1, OUTPUT);
-  digitalWrite(SINK_PIN1, 0);
-#endif
+  #ifdef UP_PIN
+    pinMode(UP_PIN, INPUT_PULLUP);
+    pinMode(DOWN_PIN, INPUT_PULLUP);
+  #endif
+  #ifdef LIFT_PIN1
+    pinMode(LIFT_PIN1, OUTPUT);
+    digitalWrite(LIFT_PIN1, 1);
+  #endif
+  #ifdef LIFT_PIN2
+    pinMode(LIFT_PIN2, OUTPUT);
+    digitalWrite(LIFT_PIN2, 1);
+  #endif
+  #ifdef LIFT_PIN3
+    pinMode(LIFT_PIN3, OUTPUT);
+    digitalWrite(LIFT_PIN3, 1);
+  #endif
+  #ifdef LIFT_PIN4
+    pinMode(LIFT_PIN4, OUTPUT);
+    digitalWrite(LIFT_PIN4, 1);
+  #endif
+  #ifdef SINK_PIN1
+    pinMode(SINK_PIN1, OUTPUT);
+    digitalWrite(SINK_PIN1, 0);
+  #endif
 
-#ifdef A1_PIN
-  stepper.setSpeed(RPM);
-  digitalWrite(A1_PIN, 0);
-  digitalWrite(A2_PIN, 0);
-  digitalWrite(B1_PIN, 0);
-  digitalWrite(B2_PIN, 0);
-#endif
-#ifdef STEP_PIN
-  stepper.setEnablePin(EN_PIN);
-  stepper.setMinPulseWidth(40);  // The A4988 has minimum pulse width of 1us
-  stepper.setMaxSpeed(maxSpeed);
-  stepper.setAcceleration(4.f * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP);
-  stepper.setPinsInverted(false, false, true);  // A4988 EN is active low
-  stepper.disableOutputs();
-#endif
-#ifdef H1_PIN
-  digitalWrite(H1_PIN, 0);
-  digitalWrite(H2_PIN, 0);
-  digitalWrite(EN_PIN, 0);
-#endif
+  #ifdef A1_PIN
+    stepper.setSpeed(RPM);
+    digitalWrite(A1_PIN, 0);
+    digitalWrite(A2_PIN, 0);
+    digitalWrite(B1_PIN, 0);
+    digitalWrite(B2_PIN, 0);
+  #endif
+  #ifdef STEP_PIN
+    float maxSpeed = (STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP / 60.f);
+    stepper.setEnablePin(EN_PIN);
+    stepper.setMinPulseWidth(40);  // The A4988 has minimum pulse width of 1us
+    stepper.setMaxSpeed(maxSpeed);
+    stepper.setAcceleration(4.f * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP);
+    stepper.setPinsInverted(false, false, true);  // A4988 EN is active low
+    stepper.disableOutputs();
+  #endif
+  #ifdef H1_PIN
+    digitalWrite(H1_PIN, 0);
+    digitalWrite(H2_PIN, 0);
+    digitalWrite(EN_PIN, 0);
+  #endif
 
-#ifdef M1_PIN
-  pinMode(M1_PIN, OUTPUT);
-  pinMode(M2_PIN, OUTPUT);
-  pinMode(M3_PIN, OUTPUT);
-#ifndef MICROSTEP_MODE
-  digitalWrite(M1_PIN, 0);
-  digitalWrite(M2_PIN, 0);
-  digitalWrite(M3_PIN, 0);
-#else
-  // microstep mode 0 (fullstep) gives 000, 1 (halfstep) gives 100, 2 gives 010, 3 gives 110, 4 gives 001, etc., except for the overrides below.
-  bool m1mode = (MICROSTEP_MODE) % 2;
-  bool m2mode = ((MICROSTEP_MODE) >> 1) % 2;
-  bool m3mode = ((MICROSTEP_MODE) >> 2) % 2;
-#ifdef SIXTEENTH_STEP_IS_111  // Check the docs for the driver. The A988 is like this:
-  if (MICROSTEP_MODE == 4) {
-    m1mode = true;
-    m2mode = true;
-  }
-#endif
-#ifdef THIRTYTWOOTH_STEP_IS_III
-  if (MICROSTEP_MODE == 5) {  // DRV8825 is like this when 1 2 and 3 are jumped because the PB2 is not working
-    m2mode = true;
-    m3mode = true;
-  }
-#endif
-  if (Serial) {
-    Serial.print("M1 M2 M3: ");
-    Serial.print(m1mode);
-    Serial.print(m2mode);
-    Serial.println(m3mode);
-  }
-  digitalWrite(M1_PIN, m1mode);
-  digitalWrite(M2_PIN, m2mode);
-  digitalWrite(M3_PIN, m3mode);
-#endif
-#endif
+  #ifdef M1_PIN
+    pinMode(M1_PIN, OUTPUT);
+    pinMode(M2_PIN, OUTPUT);
+    pinMode(M3_PIN, OUTPUT);
+    #ifndef MICROSTEP_MODE
+      digitalWrite(M1_PIN, 0);
+      digitalWrite(M2_PIN, 0);
+      digitalWrite(M3_PIN, 0);
+    #else
+      // microstep mode 0 (fullstep) gives 000, 1 (halfstep) gives 100, 2 gives 010, 3 gives 110, 4 gives 001, etc., except for the overrides below.
+      bool m1mode = (MICROSTEP_MODE) % 2;
+      bool m2mode = ((MICROSTEP_MODE) >> 1) % 2;
+      bool m3mode = ((MICROSTEP_MODE) >> 2) % 2;
+      #ifdef SIXTEENTH_STEP_IS_111  // Check the docs for the driver. The A988 is like this:
+        if (MICROSTEP_MODE == 4) {
+          m1mode = true;
+          m2mode = true;
+        }
+      #endif
+      #ifdef THIRTYTWOOTH_STEP_IS_III
+        if (MICROSTEP_MODE == 5) {  // DRV8825 is like this when 1 2 and 3 are jumped because the PB2 is not working
+          m2mode = true;
+          m3mode = true;
+        }
+      #endif
+      if (Serial) {
+        Serial.print("M1 M2 M3: ");
+        Serial.print(m1mode);
+        Serial.print(m2mode);
+        Serial.println(m3mode);
+      }
+      digitalWrite(M1_PIN, m1mode);
+      digitalWrite(M2_PIN, m2mode);
+      digitalWrite(M3_PIN, m3mode);
+    #endif
+  #endif
 
-#ifdef ENC1_PIN
-  pinMode(ENC1_PIN, INPUT_PULLUP);
-  pinMode(ENC2_PIN, INPUT_PULLUP);
-  encoder.setEncoderHandler(rotationCallback);
-#endif
+  #ifdef ENC1_PIN
+    pinMode(ENC1_PIN, INPUT_PULLUP);
+    pinMode(ENC2_PIN, INPUT_PULLUP);
+    encoder.setEncoderHandler(rotationCallback);
+  #endif
 
-#ifdef LED1_PIN
-  digitalWrite(LED1_PIN, LED_OFF);
-#endif
-#ifdef NEOPIXEL_PIN
-  led = CRGB::Black;
-  FastLED.show();
-#endif
-
-  isOpen = true;                   // Make sure your blind is in this position when booting.
+  #ifdef LED1_PIN
+    digitalWrite(LED1_PIN, LED_OFF);
+  #endif
+  #ifdef NEOPIXEL_PIN
+    led = CRGB::Black;
+    FastLED.show();
+  #endif
 }
 
 float s;
@@ -398,14 +395,14 @@ void loop() {
 
   ctr++;
 
-#ifdef ENC1_PIN
-  encoder.update();
-#endif
+  #ifdef ENC1_PIN
+    encoder.update();
+  #endif
 
-#if STEP_PIN
-  stepper.run();
-  stateMachine.run();
-#endif
+  #if STEP_PIN
+    stepper.run();
+    stateMachine.run();
+  #endif
 
   if (lastReadTime < millis() - SLOW_INTERVAL) {
     s = sample();
@@ -420,7 +417,7 @@ void loop() {
         Serial.println(s, 4);
         Serial.println("Sunset");
       }
-      //myMoveTo(TURNS);
+      myMoveTo(TURNS);
       isOpen = false;
     } else if (!isOpen && (s < sunsetLight - DAYLIGHT_MARGIN)) {  // Sunrise happens
       if (Serial) {
@@ -432,78 +429,75 @@ void loop() {
     }
   }
 
-#ifdef UP_PIN
-  // if (!digitalRead(UP_PIN) && !digitalRead(DOWN_PIN)) {
-  //   #ifdef EEPROM_ADDRESS
-  //     float target = s + isOpen ? DAYLIGHT_MARGIN/2.0 : 0-DAYLIGHT_MARGIN/2.0;
-  //     if (Serial) {
-  //       Serial.print("Setting to ");
-  //       Serial.println(target, 4);
-  //     }
-  //     sunsetLight = target;
+  #ifdef UP_PIN
+    if (!digitalRead(UP_PIN) && !digitalRead(DOWN_PIN)) {
+      #ifdef EEPROM_ADDRESS
+        float target = s + isOpen ? DAYLIGHT_MARGIN/2.0 : 0-DAYLIGHT_MARGIN/2.0;
+        if (Serial) {
+          Serial.print("Setting to ");
+          Serial.println(target, 4);
+        }
+        sunsetLight = target;
 
-  //     float result = EEPROM.put(EEPROM_ADDRESS, target);
-  //     if (Serial) {
-  //       Serial.print("Writing light to EEPROM: ");
-  //       Serial.println(sunsetLight);
-  //       Serial.print("Result: ");
-  //       Serial.println(result);
-  //     }
-  //     EEPROM.commit();
-  //     #if LED1_PIN
-  //       digitalWrite(LED1_PIN, 1);
-  //       delay(500);
-  //       digitalWrite(LED1_PIN, 0);
-  //       delay(500);
-  //       digitalWrite(LED1_PIN, 1);
-  //       delay(500);
-  //       digitalWrite(LED1_PIN, 0);
-  //     #else
-  //       #ifdef NEOPIXEL_PIN
-  //         led = CRGB::Yellow;
-  //         FastLED.show();
-  //         delay(500);
-  //         led = CRGB::Black;
-  //         FastLED.show();
-  //         delay(500);
-  //         led = CRGB::Yellow;
-  //         FastLED.show();
-  //         delay(500);
-  //         led = CRGB::Black;
-  //         FastLED.show();
-  //       #else
-  //         delay(1500);
-  //       #endif
-  //     #endif
-  //   #endif
-  // } else {
-  // if (digitalRead(UP_PIN) == 0) {
-  //   continueFast(0.25);
-  // } else if (digitalRead(DOWN_PIN) == 0) {
-  //   continueFast(-0.25);
-  // }
+        float result = EEPROM.put(EEPROM_ADDRESS, target);
+        if (Serial) {
+          Serial.print("Writing light to EEPROM: ");
+          Serial.println(sunsetLight);
+          Serial.print("Result: ");
+          Serial.println(result);
+        }
+        EEPROM.commit();
+        #if LED1_PIN
+          digitalWrite(LED1_PIN, 1);
+          delay(500);
+          digitalWrite(LED1_PIN, 0);
+          delay(500);
+          digitalWrite(LED1_PIN, 1);
+          delay(500);
+          digitalWrite(LED1_PIN, 0);
+        #else
+          #ifdef NEOPIXEL_PIN
+            led = CRGB::Yellow;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Black;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Yellow;
+            FastLED.show();
+            delay(500);
+            led = CRGB::Black;
+            FastLED.show();
+          #else
+            delay(1500);
+          #endif
+        #endif
+      #endif
+    } else {
+    if (digitalRead(UP_PIN) == 0) {
+      continueFast(0.25);
+    } else if (digitalRead(DOWN_PIN) == 0) {
+      continueFast(-0.25);
+    }
 
-#endif
+  #endif
 }
 
-bool myMoveTo(long positionInTurns) {
-  // Serial.print("MaxSpeed ");
-  // Serial.println(maxSpeed);
-  //stepper.setMaxSpeed(maxSpeed);
-  // Serial.println("MoveTo " + (positionInTurns * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP));
-  //stepper.moveTo(positionInTurns * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP);
-  //stateMachine.transitionTo(moving);
+void myMoveTo(long positionInTurns) {
+  stepper.setMaxSpeed(maxSpeed);
+  stepper.moveTo(positionInTurns * STEPS_PER_ROTATION * MICROSTEPS_PER_STEP);
+  if (stateMachine.currentState == resting->index)
+    stateMachine.transitionTo(moving);
 }
 
-// bool continueFast(float rotations) {
-//     long current = stepper.currentPosition();
+bool continueFast(float rotations) {
+  long current = stepper.currentPosition();
 
-//     stepper.moveTo(current + (MICROSTEPS_PER_STEP * STEPS_PER_ROTATION * rotations));
-//     stepper.setMaxSpeed(maxSpeed * BTN_FACTOR);
-//     if (stateMachine.currentState == resting->index)
-//       stateMachine.transitionTo(moving);
-
-// }
+  stepper.moveTo(current + (MICROSTEPS_PER_STEP * STEPS_PER_ROTATION * rotations));
+  stepper.setMaxSpeed(maxSpeed * BTN_FACTOR);
+  if (stateMachine.currentState == resting->index)
+    stateMachine.transitionTo(moving);
+}
 
 // Return the lightness value calculated with exponential moving average.
 float sample() {
