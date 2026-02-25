@@ -127,8 +127,8 @@
 #define PH_PIN 29         //A2 is pin 28 on the Tiny2040
 #define PHOTO_ANA_PIN 29  // On some (Pi RP2040?) this should be the PB pin i.e. PH_PIN, otherwise it's the A pin number
 #define NEOPIXEL_PIN 16
-#define UP_PIN 27
-#define DOWN_PIN 28
+#define UP_PIN 28
+#define DOWN_PIN 27
 #define EEPROM_ADDRESS 0
 #define ANALOG_BITS 12  // Tiny2040 is 12, RP2040 is 10
 // // With the L293D and an encoder
@@ -214,13 +214,9 @@ CRGB led;
 #endif
 
 void setup() {
-
+  delay(1000);
   Serial.begin(BAUD);
-  while (!Serial);
-  int x = Serial.getWriteError();
-  Serial.flush();
-  Serial.println(x);
-
+  
   #ifdef LED1_PIN
     pinMode(LED1_PIN, OUTPUT);
     digitalWrite(LED1_PIN, LED_ON);  // blue to indicate booting or operating
@@ -430,7 +426,7 @@ void loop() {
   }
 
   #ifdef UP_PIN
-    if (!digitalRead(UP_PIN) && !digitalRead(DOWN_PIN)) {
+    if (digitalRead(UP_PIN) == 0 && digitalRead(DOWN_PIN) == 0) {
       #ifdef EEPROM_ADDRESS
         float target = s + isOpen ? DAYLIGHT_MARGIN/2.0 : 0-DAYLIGHT_MARGIN/2.0;
         if (Serial) {
@@ -474,12 +470,12 @@ void loop() {
         #endif
       #endif
     } else {
-    if (digitalRead(UP_PIN) == 0) {
-      continueFast(0.25);
-    } else if (digitalRead(DOWN_PIN) == 0) {
-      continueFast(-0.25);
+      if (digitalRead(UP_PIN) == 0) {
+        continueFast(0.25);
+      } else if (digitalRead(DOWN_PIN) == 0) {
+        continueFast(-0.25);
+      }
     }
-
   #endif
 }
 
@@ -490,7 +486,7 @@ void myMoveTo(long positionInTurns) {
     stateMachine.transitionTo(moving);
 }
 
-bool continueFast(float rotations) {
+void continueFast(float rotations) {
   long current = stepper.currentPosition();
 
   stepper.moveTo(current + (MICROSTEPS_PER_STEP * STEPS_PER_ROTATION * rotations));
@@ -517,7 +513,6 @@ void runMoving() {
   if (stateMachine.executeOnce) {
     stepper.enableOutputs();
 
-    Serial.println("Move");
 #ifdef NEOPIXEL_PIN
     if (stepper.distanceToGo() > 0) {
       led = CRGB::Green;
@@ -532,7 +527,6 @@ void runMoving() {
 void runResting() {
   if (stateMachine.executeOnce) {
     stepper.disableOutputs();
-    Serial.println("Rest");
 #ifdef NEOPIXEL_PIN
     led = CRGB::Black;
     FastLED.show();
