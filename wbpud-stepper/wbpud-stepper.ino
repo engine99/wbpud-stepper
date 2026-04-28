@@ -4,7 +4,9 @@
 #include <FastLED.h>
 #include <EEncoder.h>
 #include <StateMachine.h>
-
+#include <momentary_button.h>
+#include "blinker.h"
+#include <TMCStepper.h>
 /**
 * Arduino windowblind puller-upper-downer with a stepper motor. Opens a blind at sunrise, closes at sunset.
 *
@@ -102,6 +104,7 @@
 // #define LED_OFF 1
 // #define ANALOG_BITS 10
 // #define EEPROM_ADDRESS 0
+
 // #define UP_PIN A1
 // #define DOWN_PIN A2
 // With L293D
@@ -127,8 +130,8 @@
 #define PH_PIN 29         //A2 is pin 28 on the Tiny2040
 #define PHOTO_ANA_PIN 29  // On some (Pi RP2040?) this should be the PB pin i.e. PH_PIN, otherwise it's the A pin number
 #define NEOPIXEL_PIN 16
-#define UP_PIN 28
-#define DOWN_PIN 27
+// #define UP_PIN 28
+// #define DOWN_PIN 27
 #define EEPROM_ADDRESS 0
 #define ANALOG_BITS 12  // Tiny2040 is 12, RP2040 is 10
 // // With the L293D and an encoder
@@ -140,15 +143,25 @@
 // #define ENC2_PIN 26
 // #define LIFT_PIN1 27
 // // With the A988
-#define SIXTEENTH_STEP_IS_111 1
-#define EN_PIN 7
-#define M1_PIN 6
-#define M2_PIN 5
-#define M3_PIN 4
-#define LIFT_PIN2 3
-#define LIFT_PIN3 2
-#define STEP_PIN 1
-#define DIR_PIN 0
+// #define SIXTEENTH_STEP_IS_111 1
+// #define EN_PIN 7
+// #define M1_PIN 6
+// #define M2_PIN 5
+// #define M3_PIN 4
+// #define LIFT_PIN2 3
+// #define LIFT_PIN3 2
+// #define STEP_PIN 1
+// #define DIR_PIN 0
+
+// With the TMC2208
+#define EN_PIN 1
+#define SW_RX 5
+#define SW_TX 4
+// #define M1_PIN 2
+// #define M2_PIN 3
+// #define STEP_PIN 7
+// #define DIR_PIN 8
+#define R_SENSE 0.11f   // Current sense resistance in Ohms on TMC220X chips. Written on 2 resistors on the chip side.
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
 
@@ -173,19 +186,25 @@
 // Customize these params according to your motor.
 //#define STEPS_PER_ROTATION 64 * 2 * 64  // for the 28BYJ-48
 // #define STEPS_PER_ROTATION 200UL// * 4 // for the JK28HS32-0674
-#define STEPS_PER_ROTATION 200UL  // for the 42STH34-0354A
+#define STEPS_PER_ROTATION 100UL  // for the 42STH34-0354A
 #define MICROSTEP_MODE 4          // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
+#define MICROSTEPS_PER_STEP (1 << MICROSTEP_MODE)
+
 #define RPM 60
+// Customize this param according to your blind. (4cm per turn)
+#define TURNS 2 //-38  // Turns at sunset
 #define BTN_FACTOR 1.2  // RPM is multiplied by this wnen button pressed
 // #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
 
-// Customize this param according to your blind. (4cm per turn)
-#define TURNS -24  // Turns at sunset
 
+// Constant constants
+#define MEDIUM_HOLD 3000 // milliseconds holding buttons
+#define LONG_HOLD 8000 // milliseconds holding buttons
+#define FLASH_ON_DURATION 25
+#define FLASH_OFF_DURATION 250
 #define SLOW_INTERVAL 1000  // milliseconds between output, light sense ...
 
-#define MICROSTEPS_PER_STEP (1 << MICROSTEP_MODE)
-
+// Variables
 bool isOpen = true;                   // Make sure your blind is in this position when booting.;
 float avgLight = isOpen ? 0.0 : 0.8;  // isOpen means more light, low value
 float sunsetLight = INITIAL_SUNSET_LIGHT;
@@ -195,26 +214,39 @@ State *moving, *resting;
 float maxSpeed = (STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP / 60.f);
 
 #ifdef A1_PIN
-// For drivers like the A4988
-AccelStepper stepper(AccelStepper::FULL4WIRE, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
+  AccelStepper stepper(AccelStepper::FULL4WIRE, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
 #endif
 
-#ifdef STEP_PIN
 // For drivers like the A4988, DRV8825, STSPIN220
-AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
+#ifdef STEP_PIN
+  AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 #endif
 
-#ifdef ENC1_PIN
-EEncoder encoder(ENC1_PIN, ENC2_PIN);
-long position = 0;
+// For the TMCStepper
+#ifdef SW_RX
+  TMC2208Stepper tmcDriver(SW_RX, SW_TX, R_SENSE);
+#endif
+
+#if defined(LED_PIN) || defined(NEOPIXEL_PIN)
+  StateMachine ledStateMachine;
+  State *dark, *blinking3, *blinking8;
+
+  Blinker *blinker3, *blinker8;
 #endif
 
 #ifdef NEOPIXEL_PIN
-CRGB led;
+  CRGB led;
+#endif
+
+#ifdef UP_PIN
+  mt::MomentaryButton upButton(UP_PIN, mt::MomentaryButton::PinState::kHigh);
+  mt::MomentaryButton downButton(DOWN_PIN, mt::MomentaryButton::PinState::kHigh);
+  StateMachine buttonStateMachine;
+  State *notHolding, *holding, *mediumHolding, *longHolding;
 #endif
 
 void setup() {
-  delay(1000);
+  delay(2000);
   Serial.begin(BAUD);
   
   #ifdef LED1_PIN
@@ -239,9 +271,10 @@ void setup() {
   moving->addTransition(&checkArrived, resting);
 
   if (Serial) {
-    Serial.println("Starting with iSL RPM STEPS_PER_ROTATION TURNS ANA_PIN MICROSTEPS_PER_STEP");
+    Serial.println("Starting with iSL TURNS RPM ANA_PIN MICROSTEPS_PER_STEP");
     Serial.println(sunsetLight, 4);
     Serial.println(TURNS);
+    Serial.println(RPM);
     Serial.println(PHOTO_ANA_PIN);
     Serial.println(MICROSTEPS_PER_STEP);
   }
@@ -332,10 +365,22 @@ void setup() {
     digitalWrite(EN_PIN, 0);
   #endif
 
+  #ifdef SW_RX // for the TMC2208
+    tmcDriver.beginSerial(115200);     // SW UART drivers
+    tmcDriver.begin();                 //  SPI: Init CS pins and possible SW SPI pins
+                                    // UART: Init SW UART (if selected) with default 115200 baudrate
+    tmcDriver.toff(5);                 // Enables driver in software
+    tmcDriver.rms_current(600);        // Set motor RMS current
+    tmcDriver.microsteps(MICROSTEPS_PER_STEP);
+    tmcDriver.pwm_autoscale(true);     // Needed for stealthChop
+  #endif
+
   #ifdef M1_PIN
     pinMode(M1_PIN, OUTPUT);
     pinMode(M2_PIN, OUTPUT);
-    pinMode(M3_PIN, OUTPUT);
+    #ifdef M3_PIN
+      pinMode(M3_PIN, OUTPUT);
+    #endif
     #ifndef MICROSTEP_MODE
       digitalWrite(M1_PIN, 0);
       digitalWrite(M2_PIN, 0);
@@ -365,7 +410,9 @@ void setup() {
       }
       digitalWrite(M1_PIN, m1mode);
       digitalWrite(M2_PIN, m2mode);
-      digitalWrite(M3_PIN, m3mode);
+      #ifdef M3_PIN
+        digitalWrite(M3_PIN, m3mode);
+      #endif
     #endif
   #endif
 
@@ -381,6 +428,29 @@ void setup() {
   #ifdef NEOPIXEL_PIN
     led = CRGB::Black;
     FastLED.show();
+  #endif
+  
+  #if defined(LED1_PIN) || defined(NEOPIXEL_PIN)
+    ledStateMachine = StateMachine();
+
+    blinker3 = new Blinker(3, FLASH_ON_DURATION, FLASH_OFF_DURATION, &flashOn, &flashOff, &goDark);
+    blinker8 = new Blinker(8, FLASH_ON_DURATION, FLASH_OFF_DURATION, &flashOn, &flashOff, &goDark);
+
+    dark = ledStateMachine.addState(&runNothing);
+    blinking3 = ledStateMachine.addState(&runBlinker3);
+    blinking8 = ledStateMachine.addState(&runBlinker8);
+
+
+  #endif
+
+  #if UP_PIN
+    buttonStateMachine = StateMachine();
+    notHolding = buttonStateMachine.addState(&runNothing);
+    holding = buttonStateMachine.addState(&runHolding);
+    mediumHolding = buttonStateMachine.addState(&runMediumHolding);
+    longHolding = buttonStateMachine.addState(&runLongHolding);
+    holding->addTransition(&checkMediumHold, mediumHolding);
+    mediumHolding->addTransition(&checkLongHold, longHolding);
   #endif
 }
 
@@ -425,57 +495,13 @@ void loop() {
     }
   }
 
+  
   #ifdef UP_PIN
-    if (digitalRead(UP_PIN) == 0 && digitalRead(DOWN_PIN) == 0) {
-      #ifdef EEPROM_ADDRESS
-        float target = s + isOpen ? DAYLIGHT_MARGIN/2.0 : 0-DAYLIGHT_MARGIN/2.0;
-        if (Serial) {
-          Serial.print("Setting to ");
-          Serial.println(target, 4);
-        }
-        sunsetLight = target;
+    runButtons();
+  #endif
 
-        float result = EEPROM.put(EEPROM_ADDRESS, target);
-        if (Serial) {
-          Serial.print("Writing light to EEPROM: ");
-          Serial.println(sunsetLight);
-          Serial.print("Result: ");
-          Serial.println(result);
-        }
-        EEPROM.commit();
-        #if LED1_PIN
-          digitalWrite(LED1_PIN, 1);
-          delay(500);
-          digitalWrite(LED1_PIN, 0);
-          delay(500);
-          digitalWrite(LED1_PIN, 1);
-          delay(500);
-          digitalWrite(LED1_PIN, 0);
-        #else
-          #ifdef NEOPIXEL_PIN
-            led = CRGB::Yellow;
-            FastLED.show();
-            delay(500);
-            led = CRGB::Black;
-            FastLED.show();
-            delay(500);
-            led = CRGB::Yellow;
-            FastLED.show();
-            delay(500);
-            led = CRGB::Black;
-            FastLED.show();
-          #else
-            delay(1500);
-          #endif
-        #endif
-      #endif
-    } else {
-      if (digitalRead(UP_PIN) == 0) {
-        continueFast(0.25);
-      } else if (digitalRead(DOWN_PIN) == 0) {
-        continueFast(-0.25);
-      }
-    }
+  #if defined(LED1_PIN) || defined(NEOPIXEL_PIN)
+    ledStateMachine.run();
   #endif
 }
 
@@ -486,6 +512,7 @@ void myMoveTo(long positionInTurns) {
     stateMachine.transitionTo(moving);
 }
 
+// Set light to Moving and advance this amount respecting the current acceleration.
 void continueFast(float rotations) {
   long current = stepper.currentPosition();
 
@@ -503,9 +530,9 @@ float sample() {
 }
 
 #ifdef ENC1_PIN
-void rotationCallback(EEncoder &enc) {
-  position += enc.getIncrement();
-}
+  void rotationCallback(EEncoder &enc) {
+    position += enc.getIncrement();
+  }
 #endif
 
 
@@ -513,27 +540,169 @@ void runMoving() {
   if (stateMachine.executeOnce) {
     stepper.enableOutputs();
 
-#ifdef NEOPIXEL_PIN
-    if (stepper.distanceToGo() > 0) {
-      led = CRGB::Green;
-    } else {
-      led = CRGB::Blue;
-    }
-    FastLED.show();
-#endif
+    #ifdef NEOPIXEL_PIN
+      if (stepper.distanceToGo() > 0) {
+        led = CRGB::Green;
+      } else {
+        led = CRGB::Blue;
+      }
+      FastLED.show();
+    #endif
   }
 }
 
 void runResting() {
   if (stateMachine.executeOnce) {
+    if (Serial) {
+     
+      Serial.println("Motor resting");
+    }
     stepper.disableOutputs();
-#ifdef NEOPIXEL_PIN
-    led = CRGB::Black;
-    FastLED.show();
-#endif
+    #ifdef NEOPIXEL_PIN
+      led = CRGB::Black;
+      FastLED.show();
+    #endif
   }
 }
 
 bool checkArrived() {
   return stepper.distanceToGo() == 0;
 }
+
+
+//
+// Buttons
+//
+double doubleHoldStamp = 0;
+bool downPressed = false;
+bool upPressed = false;
+
+// Check and respond to button presses/releases
+void runButtons() {
+  #ifdef UP_PIN
+    mt::MomentaryButton::ButtonState upEvent = upButton.DetectStateChange();
+    mt::MomentaryButton::ButtonState downEvent = downButton.DetectStateChange();
+
+    if (upEvent == mt::MomentaryButton::ButtonState::kPressed) {
+      upPressed = true;
+      if (downPressed) {
+        buttonStateMachine.transitionTo(holding);
+      }
+    } else if (upEvent == mt::MomentaryButton::ButtonState::kReleased) {
+      upPressed = false;
+      onRelease();
+    }
+
+    if (downEvent == mt::MomentaryButton::ButtonState::kPressed) {
+      downPressed = true;
+      if (upPressed) {
+        buttonStateMachine.transitionTo(holding);      
+      }
+    } else if (downEvent == mt::MomentaryButton::ButtonState::kReleased) {
+      downPressed = false;
+      onRelease();      
+    }
+    
+    if (upPressed && !downPressed) {
+      if (Serial) {
+        Serial.println("Going up");
+      }
+      continueFast(0.05);    
+    } else if (downPressed && !upPressed) {
+      if (Serial) {
+        Serial.println("Going down");
+      }
+      continueFast(-0.05);
+    } else {
+      buttonStateMachine.run();
+    }
+  #endif
+}
+
+void runNothing() {}
+
+#ifdef UP_PIN
+  void runHolding() {
+    if (buttonStateMachine.executeOnce) {
+      Serial.println("runHolding");
+      doubleHoldStamp = millis();
+    }
+
+  }
+
+  bool checkMediumHold() { return millis() - doubleHoldStamp > MEDIUM_HOLD;}
+
+  bool checkLongHold() { return millis() - doubleHoldStamp > LONG_HOLD;}
+
+  void runMediumHolding() {
+    if (buttonStateMachine.executeOnce) {
+      onMediumHold();
+    }
+    
+  }
+
+  void runLongHolding() {
+    if (buttonStateMachine.executeOnce) {
+      onLongHold();
+    }
+  }
+
+  void onMediumHold() {
+    ledStateMachine.transitionTo(blinking3);
+  }
+
+  void onRelease() {
+    
+    if (buttonStateMachine.currentState == mediumHolding->index) {
+      Serial.println("Setting luminance");
+      ledStateMachine.transitionTo(blinking3);
+    }
+    buttonStateMachine.transitionTo(notHolding);
+  }
+
+  void onLongHold() {
+    Serial.println("onLongHold");
+    ledStateMachine.transitionTo(blinking8);
+    Serial.println("Resetting range and light ...");
+    //Reset
+  }
+#endif
+
+//
+// LED Indicator
+//
+void runBlinker3() {
+  blinker3->run();
+}
+
+void runBlinker8() {
+  blinker8->run();
+}
+
+void flashOn() {
+  #if LED1_PIN
+    digitalWrite(LED1_PIN, 1);
+  #endif
+
+  #ifdef NEOPIXEL_PIN
+    led = CRGB::Yellow;
+    FastLED.show();
+  #endif 
+}
+
+void flashOff() {
+  #if LED1_PIN
+    digitalWrite(LED1_PIN, 0);
+  #endif
+
+  #ifdef NEOPIXEL_PIN
+    led = CRGB::Black;
+    FastLED.show();
+  #endif 
+}
+
+void goDark() {
+  Serial.println("goDark");
+  ledStateMachine.transitionTo(dark);
+}
+
