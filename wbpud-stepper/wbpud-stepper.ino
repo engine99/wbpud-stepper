@@ -19,52 +19,6 @@
 // Customize these params according to your board. Make sure your PHOTO_PIN supports analog in and that
 // you use the analog pin number, not the board pin number.
 
-// Define either A1_PIN, A2_PIN, B1_PIN, and B2_PIN, or DIR_PIN, STEP_PIN, and EN_PIN depending on whether you have a motor driver or stepper driver.
-
-// For the Nano
-// Trouble Uploading? Close the serial monitor, use (Old bootloader), check your cable is a data cable, Arduino as ISP programmer
-// #define BAUD 9600
-// #define PHOTO_ANA_PIN A7  // ??
-// #define PH_PIN A7         //
-// #define LIFT_PIN1 2          // A pin that will be set to high. Lines up with the VCC pin on the 8833
-// #define LIFT_PIN2 14         // A pin that will be set to high. Connect with a resistor to pull UP_PIN up.
-// #define LIFT_PIN3 15         // A pin that will be set to high. Connect with a resistor to pull DOWN_PIN up.
-// #define SINK_PIN 7          // A pin that will be set to low. Lines up with the MD pin on the 8833
-// #define UP_PIN 8
-// #define DOWN_PIN 9
-// #define A1_PIN 3
-// #define A2_PIN 4
-// #define B1_PIN 5
-// #define B2_PIN 6
-// #define LED1_PIN 13
-// #define ANALOG_BITS 10
-
-// For the digispark. USBasp programmer
-// #define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the digispark
-// #define PH_PIN 2    //
-// #define A1_PIN 0
-// #define A2_PIN 1
-// #define B1_PIN 4
-// #define B2_PIN 3
-// #define ANALOG_BITS 10
-
-// For the Trinket. USBtinyISP programmer.
-// With an 8835 programmer
-// #define PH_PIN 2
-// #define PHOTO_ANA_PIN 1 //  Analog pin 1 = PB2 on the trinket
-// #define A1_PIN 1
-// #define A2_PIN 0
-// #define B1_PIN 3
-// #define B2_PIN 4
-// #define ANALOG_BITS 10
-// With a A988 driver
-// #define PH_PIN 3
-// #define PHOTO_ANA_PIN 3 //  Analog pin 3 = PB3 on the trinket
-// #define EN_PIN 0
-// #define STEP_PIN 1
-// #define LED1_PIN 1
-// #define DIR_PIN 2
-// #define ANALOG_BITS 10
 
 // For the Pico. Use JLink programmer.
 // #define BAUD 115200
@@ -84,33 +38,17 @@
 // #define LED1_PIN 25
 // #define EEPROM_ADDRESS 0
 // #define ANALOG_BITS 10
-// With DRV8835
-// #define PH_PIN 28
-// #define PHOTO_ANA_PIN 2 //  Analog pin 2 = PB28 on the pico
-// #define A1_PIN 8
-// #define A2_PIN 27
-// #define B1_PIN 26
-// #define B2_PIN 9
-// #define LIFT_PIN1 6
-// #define LIFT_PIN2 22
-
 
 // For the Pico Tiny RP2040
 // Board  -> 'Waveshare RP2040 Zero'
-
 // #define LED1_PIN 20
 // #define LED2_PIN 19
 // #define LED_ON 0
 // #define LED_OFF 1
 // #define ANALOG_BITS 10
 // #define EEPROM_ADDRESS 0
-
 // #define UP_PIN A1
 // #define DOWN_PIN A2
-// With L293D
-// #define EN_PIN 6
-// #define H1_PIN 4
-// #define H2_PIN 5
 // With A988
 // #define SIXTEENTH_STEP_IS_111 1
 // #define EN_PIN 7
@@ -121,7 +59,6 @@
 // #define LIFT_PIN3 2
 // #define STEP_PIN 1
 // #define DIR_PIN 0
-
 
 // For the RP2040-zero
 // Board 'Raspberry Pi Pico/RP2040/RP2035' -> 'Waveshare RP2040 Zero'
@@ -134,14 +71,6 @@
 // #define DOWN_PIN 27
 #define EEPROM_ADDRESS 0
 #define ANALOG_BITS 12  // Tiny2040 is 12, RP2040 is 10
-// // With the L293D and an encoder
-// #define EN_PIN 6
-// #define H1_PIN 4
-// #define H2_PIN 5
-// #define SINK_PIN1 14
-// #define ENC1_PIN 15
-// #define ENC2_PIN 26
-// #define LIFT_PIN1 27
 // // With the A988
 // #define SIXTEENTH_STEP_IS_111 1
 // #define EN_PIN 7
@@ -153,14 +82,14 @@
 // #define STEP_PIN 1
 // #define DIR_PIN 0
 
-// With the TMC2208
-#define EN_PIN 1
-#define SW_RX 5
-#define SW_TX 4
-// #define M1_PIN 2
-// #define M2_PIN 3
-// #define STEP_PIN 7
-// #define DIR_PIN 8
+// With the TMC2208/2209 Serial mode
+#define EN_PIN      8
+#define STEP_PIN    2
+#define DIR_PIN     1
+#define RX_PIN      5
+#define TX_PIN      4
+#define SERIAL_PORT Serial2 // Use Serial2 (UART1) for TMC2208
+#define DRIVER_ADDRESS 0b00 // TMC2209 Driver address according to MS1 and MS2
 #define R_SENSE 0.11f   // Current sense resistance in Ohms on TMC220X chips. Written on 2 resistors on the chip side.
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
@@ -177,7 +106,7 @@
 // 10K  3.2   3.17  1.0
 // 75K  3.15  3.07  .99
 //  1M  3.14  3.05  .84
-#define INITIAL_SUNSET_LIGHT 0.5  // The analog reading value 0-1. This is the voltage divided by the logic voltage (3.3 or 5V).
+#define SUNSET_LIGHT 0.6  // The analog reading value 0-1. This is the voltage divided by the logic voltage (3.3 or 5V). 0.5 good with a 10K
 
 // Increase DAYLIGHT_MARGIN if the blind reverses
 // immediately after it opens / closes.
@@ -190,12 +119,10 @@
 #define MICROSTEP_MODE 4          // 2^X steps per step e.g. 3 = 8 microsteps per step // Check below for pin setting fixes
 #define MICROSTEPS_PER_STEP (1 << MICROSTEP_MODE)
 
-#define RPM 60
+#define RPM 20
 // Customize this param according to your blind. (4cm per turn)
-#define TURNS 2 //-38  // Turns at sunset
+#define TURNS 24 //-38  // Turns at sunset
 #define BTN_FACTOR 1.2  // RPM is multiplied by this wnen button pressed
-// #define ENC_REDUCTION 157 // Gear reduction of the motor wrt the encoder x callbacks per encoder revolution
-
 
 // Constant constants
 #define MEDIUM_HOLD 3000 // milliseconds holding buttons
@@ -207,30 +134,25 @@
 // Variables
 bool isOpen = true;                   // Make sure your blind is in this position when booting.;
 float avgLight = isOpen ? 0.0 : 0.8;  // isOpen means more light, low value
-float sunsetLight = INITIAL_SUNSET_LIGHT;
+float sunsetLight = SUNSET_LIGHT;
 long lastReadTime = 0;  // Count the number of reads since last output. Don't want to output every time.
 StateMachine stateMachine;
 State *moving, *resting;
 float maxSpeed = (STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP / 60.f);
 
-#ifdef A1_PIN
-  AccelStepper stepper(AccelStepper::FULL4WIRE, A1_PIN, A2_PIN, B1_PIN, B2_PIN);
-#endif
-
 // For drivers like the A4988, DRV8825, STSPIN220
-#ifdef STEP_PIN
+#if defined(STEP_PIN) || defined(RX_PIN)
   AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
 #endif
 
 // For the TMCStepper
-#ifdef SW_RX
-  TMC2208Stepper tmcDriver(SW_RX, SW_TX, R_SENSE);
+#ifdef RX_PIN
+  TMC2208Stepper tmcDriver(RX_PIN, TX_PIN, R_SENSE);
 #endif
 
 #if defined(LED_PIN) || defined(NEOPIXEL_PIN)
   StateMachine ledStateMachine;
   State *dark, *blinking3, *blinking8;
-
   Blinker *blinker3, *blinker8;
 #endif
 
@@ -257,7 +179,6 @@ void setup() {
     pinMode(LED2_PIN, OUTPUT);
     digitalWrite(LED2_PIN, LED_ON);  // LED2 to indicate power
   #endif
-
   #ifdef NEOPIXEL_PIN
     FastLED.addLeds<WS2812, NEOPIXEL_PIN>(&led, 1);
     led = CRGB::Red;
@@ -298,20 +219,9 @@ void setup() {
 
 
   // These may or may not be strictly necessary
-  #ifdef A1_PIN
-    pinMode(A1_PIN, OUTPUT);
-    pinMode(A2_PIN, OUTPUT);
-    pinMode(B1_PIN, OUTPUT);
-    pinMode(B2_PIN, OUTPUT);
-  #endif
   #ifdef STEP_PIN
     pinMode(STEP_PIN, OUTPUT);
     pinMode(DIR_PIN, OUTPUT);
-    pinMode(EN_PIN, OUTPUT);
-  #endif
-  #ifdef H1_PIN
-    pinMode(H1_PIN, OUTPUT);
-    pinMode(H2_PIN, OUTPUT);
     pinMode(EN_PIN, OUTPUT);
   #endif
 
@@ -322,34 +232,7 @@ void setup() {
     pinMode(UP_PIN, INPUT_PULLUP);
     pinMode(DOWN_PIN, INPUT_PULLUP);
   #endif
-  #ifdef LIFT_PIN1
-    pinMode(LIFT_PIN1, OUTPUT);
-    digitalWrite(LIFT_PIN1, 1);
-  #endif
-  #ifdef LIFT_PIN2
-    pinMode(LIFT_PIN2, OUTPUT);
-    digitalWrite(LIFT_PIN2, 1);
-  #endif
-  #ifdef LIFT_PIN3
-    pinMode(LIFT_PIN3, OUTPUT);
-    digitalWrite(LIFT_PIN3, 1);
-  #endif
-  #ifdef LIFT_PIN4
-    pinMode(LIFT_PIN4, OUTPUT);
-    digitalWrite(LIFT_PIN4, 1);
-  #endif
-  #ifdef SINK_PIN1
-    pinMode(SINK_PIN1, OUTPUT);
-    digitalWrite(SINK_PIN1, 0);
-  #endif
 
-  #ifdef A1_PIN
-    stepper.setSpeed(RPM);
-    digitalWrite(A1_PIN, 0);
-    digitalWrite(A2_PIN, 0);
-    digitalWrite(B1_PIN, 0);
-    digitalWrite(B2_PIN, 0);
-  #endif
   #ifdef STEP_PIN
     float maxSpeed = (STEPS_PER_ROTATION * RPM * MICROSTEPS_PER_STEP / 60.f);
     stepper.setEnablePin(EN_PIN);
@@ -359,20 +242,21 @@ void setup() {
     stepper.setPinsInverted(false, false, true);  // A4988 EN is active low
     stepper.disableOutputs();
   #endif
-  #ifdef H1_PIN
-    digitalWrite(H1_PIN, 0);
-    digitalWrite(H2_PIN, 0);
-    digitalWrite(EN_PIN, 0);
-  #endif
 
-  #ifdef SW_RX // for the TMC2208
-    tmcDriver.beginSerial(115200);     // SW UART drivers
-    tmcDriver.begin();                 //  SPI: Init CS pins and possible SW SPI pins
-                                    // UART: Init SW UART (if selected) with default 115200 baudrate
-    tmcDriver.toff(5);                 // Enables driver in software
-    tmcDriver.rms_current(600);        // Set motor RMS current
+  #ifdef RX_PIN // for the TMC2208
+    pinMode(TX_PIN, OUTPUT);
+    pinMode(RX_PIN, INPUT);
+    SERIAL_PORT.setTX(TX_PIN);
+    SERIAL_PORT.setRX(RX_PIN);
+    SERIAL_PORT.begin(19200);
+    delay(100);
+    tmcDriver.begin();
+    tmcDriver.pdn_disable(true);                 // Use UART pins for config
+    tmcDriver.toff(5);                          // Enables driver in software
+    tmcDriver.mstep_reg_select(true);           // Microstep resolution selected by MSTEP register
     tmcDriver.microsteps(MICROSTEPS_PER_STEP);
-    tmcDriver.pwm_autoscale(true);     // Needed for stealthChop
+    tmcDriver.rms_current(300);                 // Set mA current
+    tmcDriver.pwm_autoscale(true);              // Needed for stealthChop
   #endif
 
   #ifdef M1_PIN
@@ -416,12 +300,6 @@ void setup() {
     #endif
   #endif
 
-  #ifdef ENC1_PIN
-    pinMode(ENC1_PIN, INPUT_PULLUP);
-    pinMode(ENC2_PIN, INPUT_PULLUP);
-    encoder.setEncoderHandler(rotationCallback);
-  #endif
-
   #ifdef LED1_PIN
     digitalWrite(LED1_PIN, LED_OFF);
   #endif
@@ -439,8 +317,6 @@ void setup() {
     dark = ledStateMachine.addState(&runNothing);
     blinking3 = ledStateMachine.addState(&runBlinker3);
     blinking8 = ledStateMachine.addState(&runBlinker8);
-
-
   #endif
 
   #if UP_PIN
@@ -460,10 +336,6 @@ int ctr = 0;
 void loop() {
 
   ctr++;
-
-  #ifdef ENC1_PIN
-    encoder.update();
-  #endif
 
   #if STEP_PIN
     stepper.run();
