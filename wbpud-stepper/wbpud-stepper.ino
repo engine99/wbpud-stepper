@@ -5,7 +5,7 @@
 #include <EEncoder.h>
 #include <StateMachine.h>
 #include <momentary_button.h>
-#include <TMCStepper.h>
+#include <TMC2209.h>
 #include "tmcDriverDebug.h"
 /**
 * Arduino windowblind puller-upper-downer with a stepper motor. Opens a blind at sunrise, closes at sunset. Closes if full sun/over hot.
@@ -96,7 +96,6 @@
 #define RX_PIN        5
 #define TX_PIN        4
 #define SERIAL_PORT Serial2 // Use Serial2 (UART1) for TMC2208
-#define DRIVER_ADDRESS 0b00 // TMC2209 Driver address according to MS1 and MS2
 #define R_SENSE 0.11f   // Current sense resistance in Ohms on TMC220X chips. Written on 2 resistors on the chip side.
 
 #define ANALOG_MAX ((1 << ANALOG_BITS) - 1)
@@ -173,7 +172,8 @@ long lastReadTime = 0;  // Count the number of reads since last output. Don't wa
 
 // For the TMCStepper. Configures the stepper driver over serial
 #ifdef RX_PIN
-  TMC2209Stepper tmcDriver(&SERIAL_PORT, R_SENSE, DRIVER_ADDRESS);
+  TMC2209 tmcDriver;
+  HardwareSerial & tmc_serial = SERIAL_PORT;
 #endif
 
 #ifdef NEOPIXEL_PIN
@@ -398,16 +398,18 @@ void setup() {
     pinMode(RX_PIN, INPUT);
     SERIAL_PORT.setTX(TX_PIN);
     SERIAL_PORT.setRX(RX_PIN);
-    SERIAL_PORT.begin(19200);
-    delay(500);
-    tmcDriver.begin();
-    tmcDriver.pdn_disable(true);                 // Use UART pins for config
-    tmcDriver.toff(5);                          // Enables driver in software
-    tmcDriver.mstep_reg_select(true);           // Microstep resolution selected by MSTEP register
-    tmcDriver.microsteps(MICROSTEPS_PER_STEP);
-    tmcDriver.rms_current(600);                 // Set mA current
-    tmcDriver.pwm_autoscale(true);              // Needed for stealthChop
-    delay(500);
+    delay(50);
+    tmcDriver.setup(tmc_serial, 115200);
+    
+    tmcDriver.setRunCurrent(50);
+    // .begin();
+    // tmcDriver.pdn_disable(true);                 // Use UART pins for config
+    // tmcDriver.toff(5);                          // Enables driver in software
+    // tmcDriver.mstep_reg_select(true);           // Microstep resolution selected by MSTEP register
+    // tmcDriver.microsteps(MICROSTEPS_PER_STEP);
+    // tmcDriver.rms_current(600);                 // Set mA current
+    // tmcDriver.pwm_autoscale(true);              // Needed for stealthChop
+    delay(50);
   #endif
 
   // When microstepping is set by hardware
@@ -469,10 +471,10 @@ void setup() {
   bothOffTick = false;
 
   if (Serial) {
-    if (tmcDriver.version() == 0) {
-      Serial.println("tmcDriver not connected");
-    } else {
-      // tmcDriverDebug(tmcDriver);
+    if (tmcDriver.isSetupAndCommunicating()) {
+      Serial.println("tmcDriver active");
+    } else if (tmcDriver.isCommunicatingButNotSetup()) {
+      Serial.println("tmcDriver communicating but not set up");
     }
   }
   
@@ -485,7 +487,7 @@ void loop() {
 
   if (Serial) {
     
-        Serial.println(tmcDriver.SG_RESULT());
+    //Serial.println(tmcDriver.getStallGuardResult());
     // Serial.print("mres ");
     // Serial.println(tmcDriver.mres());
     // Serial.print("pdn_disable ");
@@ -595,6 +597,7 @@ float sample() {
 void runMoving() {
   if (motorStateMachine.executeOnce) {
     stepper.enableOutputs();
+    tmcDriver.enable();
     #ifdef NEOPIXEL_PIN
       if (stepper.distanceToGo() > 0) {
         led = CRGB::Green;
@@ -611,6 +614,7 @@ void runResting() {
   if (motorStateMachine.executeOnce) {
     if (Serial) Serial.println("Motor resting");    
     stepper.disableOutputs();
+    tmcDriver.disable();
     #ifdef NEOPIXEL_PIN
       led = CRGB::Black;
       FastLED.show();
@@ -688,8 +692,8 @@ void runRunning() {
       float s = sample();
 
       if (Serial) {
-        //Serial.println(s, 4);
-        Serial.println(tmcDriver.SG_RESULT());
+        Serial.println(s, 4);
+        //Serial.println(tmcDriver.SG_RESULT());
       }
       lastReadTime = millis();
 
@@ -748,7 +752,7 @@ void setForceLevel() {
     Serial.println(forceLevel);
   }
   #ifdef RX_PIN
-    tmcDriver.rms_current(forceLevel);  // Set mA current
+    //tmcDriver.rms_current(forceLevel);  // Set mA current
   #endif
 }
 
